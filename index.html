@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#030712" media="(prefers-color-scheme: dark)" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Rehab" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%237c3aed'/%3E%3Ctext x='50%25' y='54%25' dominant-baseline='middle' text-anchor='middle' font-family='-apple-system' font-size='110' font-weight='700' fill='white'%3ER%3C/text%3E%3C/svg%3E" />
+  <title>Rehab Tracker — Mario</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode: 'media' };
+  </script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    html, body { overscroll-behavior-y: none; }
+    body {
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
+      -webkit-tap-highlight-color: transparent;
+      font-feature-settings: "tnum" 1;
+    }
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type="number"] { -moz-appearance: textfield; }
+    button, [role="button"] { touch-action: manipulation; }
+  </style>
+</head>
+<body class="bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 antialiased">
+  <div id="root"></div>
+
+  <script type="text/babel" data-type="module">
+    const { useState, useEffect, useCallback, useMemo } = React;
+
+    // -------------------- STORAGE SHIM --------------------
+    // Compatible con window.storage de artifacts. Para mover a artifact:
+    // borrar este bloque y window.storage lo provee el runtime.
+    if (!window.storage) {
+      window.storage = {
+        async get(key) {
+          const raw = localStorage.getItem("rehab:" + key);
+          if (raw == null) return null;
+          try { return JSON.parse(raw); } catch { return raw; }
+        },
+        async set(key, value) {
+          const v = typeof value === "string" ? value : JSON.stringify(value);
+          localStorage.setItem("rehab:" + key, v);
+        },
+        async delete(key) { localStorage.removeItem("rehab:" + key); }
+      };
+    }
+
+    // -------------------- CONSTANTS --------------------
+    const CATEGORIES = {
+      tendon_rotuliano: { label: "Tendón rot.", cls: "bg-purple-50 text-purple-800 dark:bg-purple-950 dark:text-purple-300" },
+      cuadriceps_hsr:   { label: "Cuádriceps HSR", cls: "bg-purple-50 text-purple-800 dark:bg-purple-950 dark:text-purple-300" },
+      gluteos:          { label: "Glúteos", cls: "bg-purple-50 text-purple-800 dark:bg-purple-950 dark:text-purple-300" },
+      core_mcgill:      { label: "Core McGill", cls: "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+      movilidad:        { label: "Movilidad", cls: "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+      cardio:           { label: "Cardio", cls: "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+      upper_pecho:      { label: "Pecho", cls: "bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-300" },
+      upper_espalda:    { label: "Espalda", cls: "bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-300" },
+      upper_hombro:     { label: "Hombro", cls: "bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-300" },
+      upper_biceps:     { label: "Bíceps", cls: "bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-300" },
+      upper_triceps:    { label: "Tríceps", cls: "bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-300" }
+    };
+
+    const DEFAULT_CONFIG = {
+      profile: {
+        name: "", age: 32, weight_kg: 70, height_cm: 170,
+        body_fat_pct: 17, target_fat_pct: 14, protein_daily_g: 160, training_years: 2
+      },
+      diagnoses: {
+        knee_right: { conditions: [], normal: [], date: null },
+        lumbar:     { conditions: [], normal: [], date: null }
+      },
+      phase_rules: {
+        current_phase: 1,
+        phases: [
+          { id: 1, name: "Control motor y descarga", weeks: "0-3", dates: "14 abr - 8 may",
+            criteria: "Dolor promedio <3/10, completar 80% bloques, sin reagudización",
+            prohibited: ["Sentadillas profundas >70° flexión", "Peso muerto pesado convencional", "Leg extension en máquina", "Leg press profundo", "Correr/trotar", "Saltar", "CrossFit piernas / HIIT piernas", "Extensiones columna forzadas", "Abdominales crunch/sit-up", "Fútbol cualquier formato"],
+            allowed_cardio: ["Bicicleta estática (asiento alto)", "Caminata", "Elíptica"] },
+          { id: 1.5, name: "Mantenimiento Europa", weeks: "4-7", dates: "9 - 31 may",
+            criteria: "Mantener dolor <3/10", notes: "Bandas elásticas, peso corporal, hotel gym. 30-45 min máx." },
+          { id: 2, name: "Carga progresiva", weeks: "8", dates: "2 - 8 jun",
+            criteria: "HSR 8RM sin dolor, sentadilla parcial con carga",
+            unlocks: ["Hip thrust pesado", "Sentadilla parcial con carga progresiva", "Gym completo"] },
+          { id: 3, name: "Transición deportiva", weeks: "9", dates: "9 - 15 jun",
+            criteria: "20 min caminata rápida sin dolor, trotar 5 min continuo",
+            unlocks: ["Trotar", "Cambios dirección suaves", "Bici intensa"] },
+          { id: 4, name: "Reincorporación fútbol", weeks: "10+", dates: "15 jun+",
+            criteria: "Hop test ≥90% LSI, sentadilla unipodal sin valgo, 30 min carrera, VISA-P >85",
+            unlocks: ["Pro Amateur (modificado)", "Profesor fútbol sábados", "Sprints progresivos"] }
+        ]
+      },
+      supplements: [
+        { name: "Colágeno hidrolizado + Vit C", dose: "10-15g + 50mg", timing: "60 min antes de rehab" },
+        { name: "Curcumina (Meriva)", dose: "500-1000mg/día", timing: "Con comida" },
+        { name: "Omega-3 EPA/DHA", dose: "2-3g/día", timing: "Con comida" },
+        { name: "Vitamina D", dose: "2000-4000 UI/día", timing: "Con comida grasa" },
+        { name: "Creatina monohidrato", dose: "3-5g/día", timing: "Cualquier momento" }
+      ],
+      measures: { weight_kg: 69, waist_cm: null, hip_cm: null, neck_cm: null, body_fat_pct: 17, updated_at: "2026-04-14" }
+    };
+
+    // YouTube search helper
+    const yt = (q) => "https://www.youtube.com/results?search_query=" + encodeURIComponent(q);
+
+    const DEFAULT_PLAN = {
+      week_number: 1,
+      phase: 1,
+      phase_name: "Control motor y descarga",
+      start_date: "2026-04-21",
+      end_date: "2026-04-27",
+      objective: "Establecer base de core + glúteos sin dolor. Isométricos tendón rotuliano. Mantener tren superior.",
+      days: {
+        "2026-04-21": { day_name: "Lunes", blocks: {
+          am: { label: "Gym oficina (7-8am)", exercises: [
+            { id: "ex001", name: "Spanish squat isométrico", prescription: "5 × 45s — 70% MVIC — desc. 60s", category: "tendon_rotuliano", timing: "PRE", reference_url: yt("spanish squat isometric"), completed: false },
+            { id: "ex002", name: "Sentadilla parcial 0-60°", prescription: "3 × 12 — 15RM — tempo 3-0-3 — desc. 90s", category: "cuadriceps_hsr", reference_url: yt("partial squat 0-60"), completed: false },
+            { id: "ex003", name: "Terminal knee extension con banda", prescription: "3 × 15 — banda media — desc. 45s", category: "cuadriceps_hsr", reference_url: yt("terminal knee extension band"), completed: false },
+            { id: "ex004", name: "Press banca plano", prescription: "4 × 10 — RPE 7 — tempo 2-1-2 — desc. 90s", category: "upper_pecho", completed: false },
+            { id: "ex005", name: "Jalón al pecho", prescription: "3 × 10 — RPE 7 — tempo 2-1-2 — desc. 60s", category: "upper_espalda", completed: false }
+          ], status: "pending", saved_at: null },
+          pm: { label: "Casa (20 min)", exercises: [
+            { id: "ex006", name: "Bird dog", prescription: "3 × 10 c/lado — tempo 3-1-3 — desc. 60s", category: "core_mcgill", reference_url: yt("bird dog exercise"), completed: false },
+            { id: "ex007", name: "Side plank", prescription: "3 × 25s c/lado — desc. 45s", category: "core_mcgill", completed: false },
+            { id: "ex008", name: "Curl-up modificado McGill", prescription: "3 × 10 — tempo 2-1-2 — desc. 45s", category: "core_mcgill", completed: false },
+            { id: "ex009", name: "Estiramientos: isquios + cuádriceps + TFL + gastrocnemio", prescription: "2 × 30s c/lado c/grupo — sin rebote", category: "movilidad", completed: false }
+          ], status: "pending", saved_at: null }
+        }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false },
+
+        "2026-04-22": { day_name: "Martes", blocks: {
+          am: { label: "Gym oficina (7-8am)", exercises: [
+            { id: "ex010", name: "Spanish squat isométrico", prescription: "5 × 45s — 70% MVIC — desc. 60s", category: "tendon_rotuliano", timing: "PRE", completed: false },
+            { id: "ex011", name: "Puente glúteo bilateral", prescription: "3 × 12 — desc. 45s", category: "gluteos", completed: false },
+            { id: "ex012", name: "Clamshell con banda", prescription: "3 × 15 c/lado — banda media — desc. 45s", category: "gluteos", completed: false },
+            { id: "ex013", name: "Press hombro sentado con mancuernas", prescription: "3 × 10 — RPE 7 — tempo 2-1-2 — desc. 90s", category: "upper_hombro", completed: false },
+            { id: "ex014", name: "Face pulls con banda/polea", prescription: "3 × 15 — RPE 7 — desc. 45s", category: "upper_espalda", completed: false }
+          ], status: "pending", saved_at: null },
+          pm: { label: "Caminata + movilidad (30 min)", exercises: [
+            { id: "ex015", name: "Caminata a paso moderado", prescription: "20 min — superficie plana", category: "cardio", completed: false },
+            { id: "ex016", name: "Knee-to-wall (dorsiflexión tobillo)", prescription: "3 × 15 c/lado", category: "movilidad", completed: false },
+            { id: "ex017", name: "Estiramiento sóleo en escalón", prescription: "2 × 30s c/lado", category: "movilidad", completed: false }
+          ], status: "pending", saved_at: null }
+        }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false },
+
+        "2026-04-23": { day_name: "Miércoles", blocks: {
+          am: { label: "Gym oficina (7-8am)", exercises: [
+            { id: "ex018", name: "Spanish squat isométrico", prescription: "5 × 45s — 70% MVIC — desc. 60s", category: "tendon_rotuliano", timing: "PRE", completed: false },
+            { id: "ex019", name: "Sentadilla parcial 0-60°", prescription: "3 × 12 — 15RM — tempo 3-0-3 — desc. 90s", category: "cuadriceps_hsr", completed: false },
+            { id: "ex020", name: "Press banca inclinado mancuernas", prescription: "3 × 10 — RPE 7 — tempo 2-1-2 — desc. 90s", category: "upper_pecho", completed: false },
+            { id: "ex021", name: "Remo mancuerna apoyado en banco", prescription: "3 × 10 c/lado — RPE 7 — tempo 2-1-2 — desc. 60s", category: "upper_espalda", completed: false },
+            { id: "ex022", name: "Curl mancuerna alterno", prescription: "3 × 12 — RPE 7 — tempo 2-1-2 — desc. 60s", category: "upper_biceps", completed: false }
+          ], status: "pending", saved_at: null },
+          pm: { label: "Casa (25 min)", exercises: [
+            { id: "ex023", name: "Dead bug", prescription: "3 × 8 c/lado — tempo 3-1-3 — desc. 45s", category: "core_mcgill", completed: false },
+            { id: "ex024", name: "Pallof press (con banda en poste)", prescription: "3 × 10 c/lado — desc. 45s", category: "core_mcgill", completed: false },
+            { id: "ex025", name: "Puente glúteo unipodal", prescription: "3 × 10 c/lado — desc. 45s", category: "gluteos", completed: false },
+            { id: "ex026", name: "Estiramientos completos", prescription: "2 × 30s c/grupo — sin rebote", category: "movilidad", completed: false }
+          ], status: "pending", saved_at: null }
+        }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false },
+
+        "2026-04-24": { day_name: "Jueves", blocks: {
+          am: { label: "Gym oficina (7-8am)", exercises: [
+            { id: "ex027", name: "Spanish squat isométrico", prescription: "5 × 45s — 70% MVIC — desc. 60s", category: "tendon_rotuliano", timing: "PRE", completed: false },
+            { id: "ex028", name: "Monster walks con banda", prescription: "3 × 12 c/dirección — desc. 45s", category: "gluteos", completed: false },
+            { id: "ex029", name: "Hip thrust en máquina Smith", prescription: "3 × 12 — RPE 7 — desc. 60s", category: "gluteos", completed: false },
+            { id: "ex030", name: "Extensión tríceps en polea", prescription: "3 × 12 — RPE 7 — tempo 2-1-2 — desc. 60s", category: "upper_triceps", completed: false },
+            { id: "ex031", name: "Elevaciones laterales", prescription: "3 × 12 — RPE 7 — desc. 60s", category: "upper_hombro", completed: false }
+          ], status: "pending", saved_at: null },
+          pm: { label: "Casa (20 min)", exercises: [
+            { id: "ex032", name: "Bird dog", prescription: "3 × 10 c/lado — tempo 3-1-3 — desc. 60s", category: "core_mcgill", completed: false },
+            { id: "ex033", name: "Side plank", prescription: "3 × 30s c/lado — desc. 45s", category: "core_mcgill", completed: false },
+            { id: "ex034", name: "Knee-to-wall + estiramientos", prescription: "3 × 15 c/lado + 2 × 30s c/grupo", category: "movilidad", completed: false }
+          ], status: "pending", saved_at: null }
+        }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false },
+
+        "2026-04-25": { day_name: "Viernes", blocks: {
+          am: { label: "Gym cerca de casa", exercises: [
+            { id: "ex035", name: "Bicicleta estática (asiento alto)", prescription: "20 min — resist. baja-media — RPM 60-70", category: "cardio", completed: false },
+            { id: "ex036", name: "Spanish squat isométrico", prescription: "5 × 45s — 70% MVIC — desc. 60s", category: "tendon_rotuliano", completed: false },
+            { id: "ex037", name: "Terminal knee extension con banda", prescription: "3 × 15 — banda media — desc. 45s", category: "cuadriceps_hsr", completed: false }
+          ], status: "pending", saved_at: null },
+          pm: { label: "Estiramientos completos (15 min)", exercises: [
+            { id: "ex038", name: "Estiramientos: isquios + cuádriceps + TFL + gastrocnemio + sóleo", prescription: "2 × 30s c/lado c/grupo — sin rebote", category: "movilidad", completed: false },
+            { id: "ex039", name: "Foam rolling cuádriceps y TFL", prescription: "2 min c/lado", category: "movilidad", completed: false }
+          ], status: "pending", saved_at: null }
+        }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false },
+
+        "2026-04-26": { day_name: "Sábado", blocks: {
+          am: { label: "Gym (flexible)", exercises: [
+            { id: "ex040", name: "Spanish squat isométrico", prescription: "5 × 45s — 70% MVIC — desc. 60s", category: "tendon_rotuliano", timing: "PRE", completed: false },
+            { id: "ex041", name: "Sentadilla parcial 0-60°", prescription: "3 × 12 — 15RM — tempo 3-0-3 — desc. 90s", category: "cuadriceps_hsr", completed: false },
+            { id: "ex042", name: "Dominadas asistidas o jalón al pecho", prescription: "3 × 10 — RPE 7 — desc. 90s", category: "upper_espalda", completed: false },
+            { id: "ex043", name: "Pull-apart con banda", prescription: "3 × 15 — desc. 30s", category: "upper_espalda", completed: false },
+            { id: "ex044", name: "Curl martillo", prescription: "3 × 12 — RPE 7 — desc. 60s", category: "upper_biceps", completed: false }
+          ], status: "pending", saved_at: null },
+          pm: { label: "Caminata o descanso activo", exercises: [
+            { id: "ex045", name: "Caminata suave", prescription: "20-30 min — ritmo conversacional", category: "cardio", completed: false }
+          ], status: "pending", saved_at: null }
+        }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false },
+
+        "2026-04-27": { day_name: "Domingo", blocks: {
+          rest: { label: "Descanso activo", exercises: [
+            { id: "ex046", name: "Caminata suave + movilidad opcional", prescription: "20-30 min", category: "cardio", completed: false }
+          ], status: "pending", saved_at: null }
+        }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false }
+      }
+    };
+
+    const DEFAULT_HISTORY = { daily_logs: {}, weekly_reports: {}, pain_series: [] };
+
+    // -------------------- HELPERS --------------------
+    function todayIso() {
+      const d = new Date();
+      return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
+    }
+
+    function calcBlockStatus(block) {
+      if (!block) return "pending";
+      const n = block.exercises.length;
+      const done = block.exercises.filter(e => e.completed).length;
+      if (done === 0) return "skipped";
+      if (done === n) return "complete";
+      return "partial";
+    }
+
+    function dayState(day, dateKey, today) {
+      const blocks = Object.values(day.blocks);
+      const statuses = blocks.map(b => b.status);
+      const allComplete = statuses.length > 0 && statuses.every(s => s === "complete");
+      const anySaved = statuses.some(s => s && s !== "pending");
+      const isRest = "rest" in day.blocks;
+      if (allComplete) return "completed";
+      if (anySaved) return "partial";
+      if (dateKey === today) return "today";
+      if (isRest) return "rest";
+      if (dateKey < today) return "missed";
+      return "pending";
+    }
+
+    function computeKPIs(plan) {
+      const dayKeys = Object.keys(plan.days);
+      let trainingDone = 0;
+      const kneeAfter = [];
+      const backAfter = [];
+      for (const k of dayKeys) {
+        const d = plan.days[k];
+        const isRest = "rest" in d.blocks;
+        if (!isRest) {
+          const s = Object.values(d.blocks).map(b => b.status);
+          if (s.length > 0 && s.every(x => x === "complete")) trainingDone++;
+        }
+        if (d.pain?.knee_after != null) kneeAfter.push(Number(d.pain.knee_after));
+        if (d.pain?.back_after != null) backAfter.push(Number(d.pain.back_after));
+      }
+      const avg = (arr) => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : "—";
+      return {
+        training: trainingDone + "/6",
+        macros: "0/7",
+        kneePain: avg(kneeAfter),
+        backPain: avg(backAfter)
+      };
+    }
+
+    function weekProgressPct(plan) {
+      const dayKeys = Object.keys(plan.days);
+      let totalBlocks = 0, completeBlocks = 0;
+      for (const k of dayKeys) {
+        for (const b of Object.values(plan.days[k].blocks)) {
+          totalBlocks++;
+          if (b.status === "complete") completeBlocks++;
+        }
+      }
+      return totalBlocks ? Math.round(100 * completeBlocks / totalBlocks) : 0;
+    }
+
+    // -------------------- COMPONENTS --------------------
+
+    function Header({ plan, kpis, progress }) {
+      return (
+        <div className="px-4 pt-4 pb-3 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10 bg-white/90 dark:bg-gray-950/90 backdrop-blur">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded-full bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                Fase {plan.phase} · {plan.phase_name}
+              </span>
+            </div>
+            <span className="text-xs text-gray-500 dark:text-gray-400">Semana {plan.week_number} de 12</span>
+          </div>
+          <p className="text-sm text-gray-700 dark:text-gray-300 mb-3 leading-snug">{plan.objective}</p>
+
+          <div className="mb-3">
+            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+              <span>Progreso semanal</span>
+              <span className="tabular-nums">{progress}%</span>
+            </div>
+            <div className="h-1.5 w-full bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+              <div className="h-full bg-emerald-500 transition-all" style={{ width: progress + "%" }} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 gap-2">
+            <KPI label="Entreno" value={kpis.training} />
+            <KPI label="Macros" value={kpis.macros} />
+            <KPI label="Rodilla" value={kpis.kneePain} suffix="/10" />
+            <KPI label="Lumbar" value={kpis.backPain} suffix="/10" />
+          </div>
+        </div>
+      );
+    }
+
+    function KPI({ label, value, suffix }) {
+      return (
+        <div className="rounded-lg border border-gray-200 dark:border-gray-800 px-2 py-2 text-center bg-white dark:bg-gray-900">
+          <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</div>
+          <div className="text-sm font-semibold tabular-nums mt-0.5">
+            {value}{suffix && <span className="text-[10px] font-normal text-gray-500 dark:text-gray-400">{suffix}</span>}
+          </div>
+        </div>
+      );
+    }
+
+    function ChatBar() {
+      return (
+        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-800">
+          <div className="flex items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 px-3 py-2 opacity-60">
+            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 4v-4z" />
+            </svg>
+            <input
+              disabled
+              placeholder="Chat IA — disponible en Release 3"
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-gray-400 dark:placeholder:text-gray-500 min-h-[28px]"
+            />
+          </div>
+        </div>
+      );
+    }
+
+    function TabBar({ active, onChange }) {
+      const tabs = [{ id: "entreno", label: "Entrenamiento" }, { id: "nutri", label: "Nutrición" }];
+      return (
+        <div className="px-4 pt-3 sticky top-0 z-0 bg-white dark:bg-gray-950">
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-gray-100 dark:bg-gray-900">
+            {tabs.map(t => {
+              const isActive = t.id === active;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => onChange(t.id)}
+                  className={"min-h-[40px] text-sm font-medium rounded-lg transition " + (isActive ? "bg-white dark:bg-gray-800 shadow-sm text-gray-900 dark:text-gray-100" : "text-gray-500 dark:text-gray-400")}
+                >{t.label}</button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    function DayChip({ dateKey, day, state, selected, onClick }) {
+      const label = day.day_name.slice(0, 3);
+      const dayNum = dateKey.slice(-2);
+      const cls = {
+        completed: "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-800",
+        partial:   "bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800",
+        today:     "bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800",
+        missed:    "bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-900",
+        rest:      "bg-gray-50 text-gray-500 border-gray-200 dark:bg-gray-900 dark:text-gray-500 dark:border-gray-800 italic",
+        pending:   "bg-white text-gray-600 border-gray-200 dark:bg-gray-900 dark:text-gray-400 dark:border-gray-800"
+      }[state];
+      const ring = selected ? " ring-2 ring-offset-1 ring-purple-500 dark:ring-offset-gray-950" : "";
+      return (
+        <button
+          onClick={onClick}
+          className={"flex flex-col items-center justify-center min-w-[44px] min-h-[56px] px-2 py-1 rounded-lg border text-xs " + cls + ring}
+        >
+          <span className="font-medium uppercase tracking-wide text-[10px]">{label}</span>
+          <span className="text-sm font-semibold tabular-nums">{dayNum}</span>
+        </button>
+      );
+    }
+
+    function ExerciseRow({ ex, onToggle }) {
+      const cat = CATEGORIES[ex.category] || { label: ex.category, cls: "bg-gray-100 text-gray-700" };
+      return (
+        <label className="flex items-start gap-3 py-2 cursor-pointer active:bg-gray-50 dark:active:bg-gray-900 -mx-3 px-3 rounded-lg">
+          <input
+            type="checkbox"
+            checked={!!ex.completed}
+            onChange={() => onToggle(ex.id)}
+            className="w-5 h-5 mt-0.5 accent-emerald-600 flex-shrink-0"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between gap-2">
+              <div className={"text-sm leading-snug " + (ex.completed ? "line-through text-gray-400 dark:text-gray-600" : "text-gray-900 dark:text-gray-100")}>
+                {ex.name}
+                {ex.timing && <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 align-middle">{ex.timing}</span>}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap mt-1">
+              <span className={"text-[10px] font-medium px-1.5 py-0.5 rounded " + cat.cls}>{cat.label}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{ex.prescription}</span>
+            </div>
+            {ex.reference_url && (
+              <a
+                href={ex.reference_url}
+                target="_blank"
+                rel="noopener"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 text-[11px] text-purple-700 dark:text-purple-400 mt-1 hover:underline"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                Ver referencia
+              </a>
+            )}
+          </div>
+        </label>
+      );
+    }
+
+    function PainInput({ pain, onChange, disabled }) {
+      const field = (label, key, value) => (
+        <div className="flex flex-col">
+          <label className="text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-0.5">{label}</label>
+          <input
+            type="number"
+            inputMode="numeric"
+            min="0" max="10" step="1"
+            value={value ?? ""}
+            disabled={disabled}
+            onChange={(e) => onChange(key, e.target.value === "" ? null : Math.max(0, Math.min(10, Number(e.target.value))))}
+            className="w-full h-10 text-center tabular-nums text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 disabled:opacity-50"
+            placeholder="—"
+          />
+        </div>
+      );
+      return (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 p-3 bg-white dark:bg-gray-900">
+          <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Dolor (0-10)</div>
+          <div className="space-y-2">
+            <div>
+              <div className="text-[11px] text-gray-500 dark:text-gray-400 mb-1">Rodilla derecha</div>
+              <div className="grid grid-cols-2 gap-2">
+                {field("Antes", "knee_before", pain.knee_before)}
+                {field("Después", "knee_after", pain.knee_after)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[11px] text-gray-500 dark:text-gray-400 mb-1">Lumbar</div>
+              <div className="grid grid-cols-2 gap-2">
+                {field("Antes", "back_before", pain.back_before)}
+                {field("Después", "back_after", pain.back_after)}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function BlockCard({ blockKey, block, onToggle, onSave, expanded, onToggleExpand }) {
+      const status = block.status;
+      const total = block.exercises.length;
+      const done = block.exercises.filter(e => e.completed).length;
+      const savedAt = block.saved_at ? new Date(block.saved_at) : null;
+
+      const statusPill = {
+        complete: { cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300", label: "Completo" },
+        partial:  { cls: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300", label: "Parcial" },
+        skipped:  { cls: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300", label: "Saltado" },
+        pending:  { cls: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", label: "Pendiente" }
+      }[status];
+
+      const titleByKey = { am: "AM", pm: "PM", rest: "Rest" };
+
+      return (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+          <button
+            onClick={onToggleExpand}
+            className="w-full flex items-center justify-between gap-2 p-3 min-h-[56px] active:bg-gray-50 dark:active:bg-gray-800"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-semibold px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 uppercase">{titleByKey[blockKey] || blockKey}</span>
+              <span className="text-sm truncate">{block.label}</span>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{done}/{total}</span>
+              <span className={"text-[10px] font-medium px-1.5 py-0.5 rounded " + statusPill.cls}>{statusPill.label}</span>
+              <svg className={"w-4 h-4 text-gray-400 transition-transform " + (expanded ? "rotate-180" : "")} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+            </div>
+          </button>
+          {expanded && (
+            <div className="px-3 pb-3 border-t border-gray-100 dark:border-gray-800">
+              <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                {block.exercises.map(ex => (
+                  <ExerciseRow key={ex.id} ex={ex} onToggle={(id) => onToggle(blockKey, id)} />
+                ))}
+              </div>
+              <button
+                onClick={() => onSave(blockKey)}
+                className="w-full mt-3 min-h-[44px] rounded-xl bg-emerald-600 text-white text-sm font-medium active:bg-emerald-700"
+              >
+                Guardar bloque {titleByKey[blockKey] || blockKey}
+              </button>
+              {savedAt && (
+                <div className="text-[10px] text-gray-500 dark:text-gray-400 text-center mt-1.5">
+                  Guardado {savedAt.toLocaleString("es-PE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function DayPlan({ plan, selectedDate, onSelectDay, onToggleExercise, onSaveBlock, onPainChange }) {
+      const today = todayIso();
+      const day = plan.days[selectedDate];
+      const [expanded, setExpanded] = useState(() => {
+        const init = {};
+        Object.keys(day.blocks).forEach(k => init[k] = true);
+        return init;
+      });
+
+      // Re-sync expanded state when date changes
+      useEffect(() => {
+        const init = {};
+        Object.keys(plan.days[selectedDate].blocks).forEach(k => init[k] = true);
+        setExpanded(init);
+      }, [selectedDate]);
+
+      const toggleExpand = (k) => setExpanded(s => ({ ...s, [k]: !s[k] }));
+      const anyBlockSaved = Object.values(day.blocks).some(b => b.saved_at);
+
+      return (
+        <div className="px-4 py-3 space-y-3">
+          {/* Day chips — horizontal scroll */}
+          <div className="-mx-4 px-4 overflow-x-auto scrollbar-hide">
+            <div className="flex gap-2 pb-1">
+              {Object.entries(plan.days).map(([dateKey, d]) => (
+                <DayChip
+                  key={dateKey}
+                  dateKey={dateKey}
+                  day={d}
+                  state={dayState(d, dateKey, today)}
+                  selected={dateKey === selectedDate}
+                  onClick={() => onSelectDay(dateKey)}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Pain input */}
+          <PainInput pain={day.pain} onChange={onPainChange} />
+          {!anyBlockSaved && (
+            <div className="text-[11px] text-gray-500 dark:text-gray-400 -mt-1.5 px-1">
+              Registra el dolor al guardar el primer bloque.
+            </div>
+          )}
+
+          {/* Blocks */}
+          <div className="space-y-2">
+            {Object.entries(day.blocks).map(([k, block]) => (
+              <BlockCard
+                key={k}
+                blockKey={k}
+                block={block}
+                onToggle={onToggleExercise}
+                onSave={onSaveBlock}
+                expanded={!!expanded[k]}
+                onToggleExpand={() => toggleExpand(k)}
+              />
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    function WeekSummary({ plan }) {
+      return (
+        <div className="px-4 py-3">
+          <h3 className="text-sm font-semibold mb-2 text-gray-900 dark:text-gray-100">Resumen semanal</h3>
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden bg-white dark:bg-gray-900">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                <tr>
+                  <th className="text-left px-2 py-2 font-medium">Día</th>
+                  <th className="text-center px-1 py-2 font-medium">AM</th>
+                  <th className="text-center px-1 py-2 font-medium">PM</th>
+                  <th className="text-center px-2 py-2 font-medium">Dolor R/L</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                {Object.entries(plan.days).map(([dateKey, d]) => {
+                  const isRest = "rest" in d.blocks;
+                  const am = d.blocks.am || d.blocks.rest;
+                  const pm = d.blocks.pm;
+                  const kA = d.pain?.knee_after, bA = d.pain?.back_after;
+                  return (
+                    <tr key={dateKey}>
+                      <td className="px-2 py-2">
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{d.day_name.slice(0,3)}</div>
+                        <div className="text-[10px] text-gray-500 dark:text-gray-400 tabular-nums">{dateKey.slice(-2)}</div>
+                      </td>
+                      <td className="text-center px-1 py-2">{statusDot(am?.status)}</td>
+                      <td className="text-center px-1 py-2">{isRest ? <span className="text-gray-400 italic">—</span> : statusDot(pm?.status)}</td>
+                      <td className="text-center px-2 py-2 tabular-nums text-gray-700 dark:text-gray-300">
+                        {kA != null || bA != null ? `${kA ?? "—"}/${bA ?? "—"}` : <span className="text-gray-400">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+
+    function statusDot(status) {
+      const cls = {
+        complete: "bg-emerald-500",
+        partial:  "bg-amber-500",
+        skipped:  "bg-red-500",
+        pending:  "bg-gray-300 dark:bg-gray-700"
+      }[status || "pending"];
+      return <span className={"inline-block w-2.5 h-2.5 rounded-full " + cls} />;
+    }
+
+    function Timeline({ config }) {
+      const phases = config.phase_rules.phases;
+      const current = config.phase_rules.current_phase;
+      return (
+        <div className="px-4 pt-3 pb-6">
+          <h3 className="text-sm font-semibold mb-2 text-gray-900 dark:text-gray-100">Timeline</h3>
+          <div className="space-y-2">
+            {phases.map(p => {
+              const isCurrent = p.id === current;
+              const isPast = p.id < current;
+              return (
+                <div
+                  key={p.id}
+                  className={"rounded-xl border p-3 " + (isCurrent
+                    ? "border-purple-300 bg-purple-50 dark:border-purple-800 dark:bg-purple-950/40"
+                    : isPast
+                      ? "border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 opacity-60"
+                      : "border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900")}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">Fase {p.id}</span>
+                        {isCurrent && (
+                          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-200 text-purple-900 dark:bg-purple-800 dark:text-purple-100">
+                            Estás aquí
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm font-medium mt-0.5">{p.name}</div>
+                      <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">Sem {p.weeks} · {p.dates}</div>
+                    </div>
+                  </div>
+                  {isCurrent && p.criteria && (
+                    <div className="mt-2 text-[11px] text-gray-700 dark:text-gray-300">
+                      <span className="font-medium">Criterio avance:</span> {p.criteria}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    function NutritionPlaceholder() {
+      return (
+        <div className="px-4 py-8 text-center">
+          <div className="text-4xl mb-3">🥗</div>
+          <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Nutrición</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Disponible en Release 2</div>
+        </div>
+      );
+    }
+
+    // -------------------- APP --------------------
+    function App() {
+      const [loaded, setLoaded] = useState(false);
+      const [config, setConfig] = useState(null);
+      const [plan, setPlan] = useState(null);
+      const [activeTab, setActiveTab] = useState("entreno");
+      const [selectedDate, setSelectedDate] = useState(null);
+
+      // Load on mount
+      useEffect(() => {
+        (async () => {
+          let c = await window.storage.get("config");
+          let p = await window.storage.get("active-plan");
+          let h = await window.storage.get("history");
+          if (!c) { c = DEFAULT_CONFIG; await window.storage.set("config", c); }
+          if (!p) { p = DEFAULT_PLAN; await window.storage.set("active-plan", p); }
+          if (!h) { h = DEFAULT_HISTORY; await window.storage.set("history", h); }
+          setConfig(c);
+          setPlan(p);
+          // Default selected day: today if in plan, else start_date
+          const today = todayIso();
+          setSelectedDate(p.days[today] ? today : p.start_date);
+          setLoaded(true);
+        })();
+      }, []);
+
+      const persistPlan = useCallback(async (next) => {
+        setPlan(next);
+        await window.storage.set("active-plan", next);
+      }, []);
+
+      const toggleExercise = useCallback((blockKey, exId) => {
+        const next = structuredClone(plan);
+        const block = next.days[selectedDate].blocks[blockKey];
+        const ex = block.exercises.find(e => e.id === exId);
+        ex.completed = !ex.completed;
+        // Don't persist on every toggle — only on save
+        setPlan(next);
+      }, [plan, selectedDate]);
+
+      const saveBlock = useCallback((blockKey) => {
+        const next = structuredClone(plan);
+        const block = next.days[selectedDate].blocks[blockKey];
+        block.status = calcBlockStatus(block);
+        block.saved_at = new Date().toISOString();
+        persistPlan(next);
+      }, [plan, selectedDate, persistPlan]);
+
+      const painChange = useCallback((key, value) => {
+        const next = structuredClone(plan);
+        next.days[selectedDate].pain[key] = value;
+        persistPlan(next);
+      }, [plan, selectedDate, persistPlan]);
+
+      if (!loaded) {
+        return <div className="p-8 text-center text-sm text-gray-500">Cargando…</div>;
+      }
+
+      const kpis = computeKPIs(plan);
+      const progress = weekProgressPct(plan);
+
+      return (
+        <div className="max-w-[480px] mx-auto pb-10">
+          <Header plan={plan} kpis={kpis} progress={progress} />
+          <ChatBar />
+          <TabBar active={activeTab} onChange={setActiveTab} />
+
+          {activeTab === "entreno" ? (
+            <>
+              <DayPlan
+                plan={plan}
+                selectedDate={selectedDate}
+                onSelectDay={setSelectedDate}
+                onToggleExercise={toggleExercise}
+                onSaveBlock={saveBlock}
+                onPainChange={painChange}
+              />
+              <WeekSummary plan={plan} />
+              <Timeline config={config} />
+              <ResetFooter onReset={async () => {
+                if (confirm("¿Borrar todos los datos y empezar de cero?")) {
+                  await window.storage.delete("config");
+                  await window.storage.delete("active-plan");
+                  await window.storage.delete("history");
+                  location.reload();
+                }
+              }} />
+            </>
+          ) : (
+            <NutritionPlaceholder />
+          )}
+        </div>
+      );
+    }
+
+    function ResetFooter({ onReset }) {
+      return (
+        <div className="px-4 pt-2 pb-6">
+          <button
+            onClick={onReset}
+            className="w-full min-h-[36px] text-[11px] text-gray-400 dark:text-gray-600 hover:text-red-600 dark:hover:text-red-400"
+          >Reiniciar datos</button>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
