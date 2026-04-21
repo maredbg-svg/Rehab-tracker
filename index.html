@@ -373,15 +373,17 @@
     }
 
     function weekProgressPct(plan) {
-      const dayKeys = Object.keys(plan.days);
-      let totalBlocks = 0, completeBlocks = 0;
-      for (const k of dayKeys) {
+      let totalEx = 0, doneEx = 0;
+      for (const k of Object.keys(plan.days)) {
         for (const b of Object.values(plan.days[k].blocks)) {
-          totalBlocks++;
-          if (b.status === "complete") completeBlocks++;
+          for (const ex of b.exercises) {
+            if (ex.custom) continue;
+            totalEx++;
+            if (ex.completed) doneEx++;
+          }
         }
       }
-      return totalBlocks ? Math.round(100 * completeBlocks / totalBlocks) : 0;
+      return totalEx ? Math.round(100 * doneEx / totalEx) : 0;
     }
 
     // -------------------- COMPONENTS --------------------
@@ -1641,13 +1643,15 @@
       }, []);
 
       const toggleExercise = useCallback((blockKey, exId) => {
-        const next = structuredClone(plan);
-        const block = next.days[selectedDate].blocks[blockKey];
-        const ex = block.exercises.find(e => e.id === exId);
-        ex.completed = !ex.completed;
-        // Don't persist on every toggle — only on save
-        setPlan(next);
-      }, [plan, selectedDate]);
+        setPlan(prev => {
+          const next = structuredClone(prev);
+          const block = next.days[selectedDate].blocks[blockKey];
+          const ex = block.exercises.find(e => e.id === exId);
+          ex.completed = !ex.completed;
+          window.storage.set("active-plan", next);
+          return next;
+        });
+      }, [selectedDate]);
 
       const saveBlock = useCallback((blockKey) => {
         const next = structuredClone(plan);
