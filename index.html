@@ -228,11 +228,31 @@
 
     function calcBlockStatus(block) {
       if (!block) return "pending";
-      const n = block.exercises.length;
-      const done = block.exercises.filter(e => e.completed).length;
+      const planned = block.exercises.filter(e => !e.custom);
+      if (planned.length === 0) return "skipped";
+      const done = planned.filter(e => e.completed).length;
       if (done === 0) return "skipped";
-      if (done === n) return "complete";
+      if (done === planned.length) return "complete";
       return "partial";
+    }
+
+    function countPlannedVsCustom(block) {
+      const planned = block.exercises.filter(e => !e.custom);
+      const customDone = block.exercises.filter(e => e.custom && e.completed).length;
+      const plannedDone = planned.filter(e => e.completed).length;
+      return { plannedDone, plannedTotal: planned.length, customDone };
+    }
+
+    function parsePrescriptionDefaults(text) {
+      // Best-effort parse "4 × 10 — 22 kg" or "4x10" or "3 × 12 — 15RM"
+      if (!text) return { sets: null, reps: "", weight: "" };
+      const setsReps = text.match(/(\d+)\s*[x×]\s*([0-9]+(?:[-0-9]*)?(?:s|min)?)/i);
+      const weight = text.match(/(\d+(?:\.\d+)?)\s*kg/i);
+      return {
+        sets: setsReps ? Number(setsReps[1]) : null,
+        reps: setsReps ? setsReps[2] : "",
+        weight: weight ? weight[1] : ""
+      };
     }
 
     function dayState(day, dateKey, today) {
@@ -391,27 +411,47 @@
       );
     }
 
-    function ExerciseRow({ ex, onToggle }) {
+    function formatLog(log) {
+      if (!log) return null;
+      const parts = [];
+      if (log.sets != null) parts.push(log.sets + "×");
+      if (log.reps) parts[parts.length-1] = (parts[parts.length-1] || "") + log.reps;
+      if (!parts.length && log.reps) parts.push(log.reps);
+      if (log.weight) parts.push("@ " + log.weight + "kg");
+      if (log.rpe != null) parts.push("RPE " + log.rpe);
+      return parts.join(" ");
+    }
+
+    function ExerciseRow({ ex, onToggle, onEdit, onDelete }) {
       const cat = CATEGORIES[ex.category] || { label: ex.category, cls: "bg-gray-100 text-gray-700" };
+      const logText = formatLog(ex.log);
       return (
-        <label className="flex items-start gap-3 py-2 cursor-pointer active:bg-gray-50 dark:active:bg-gray-900 -mx-3 px-3 rounded-lg">
+        <div className="flex items-start gap-2 py-2 -mx-3 px-3 rounded-lg">
           <input
             type="checkbox"
             checked={!!ex.completed}
             onChange={() => onToggle(ex.id)}
-            className="w-5 h-5 mt-0.5 accent-emerald-600 flex-shrink-0"
+            className="w-5 h-5 mt-0.5 accent-emerald-600 flex-shrink-0 cursor-pointer"
           />
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0" onClick={() => onToggle(ex.id)} style={{ cursor: "pointer" }}>
             <div className="flex items-start justify-between gap-2">
               <div className={"text-sm leading-snug " + (ex.completed ? "line-through text-gray-400 dark:text-gray-600" : "text-gray-900 dark:text-gray-100")}>
                 {ex.name}
+                {ex.modified && <span className="ml-1 text-purple-500 dark:text-purple-400" title="Modificado del plan original">✱</span>}
                 {ex.timing && <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300 align-middle">{ex.timing}</span>}
+                {ex.custom && <span className="ml-1.5 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-300 align-middle">Extra</span>}
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap mt-1">
               <span className={"text-[10px] font-medium px-1.5 py-0.5 rounded " + cat.cls}>{cat.label}</span>
-              <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{ex.prescription}</span>
+              {ex.prescription && <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{ex.prescription}</span>}
             </div>
+            {logText && (
+              <div className="mt-1 text-xs text-emerald-700 dark:text-emerald-400 tabular-nums">
+                → {logText}
+                {ex.log?.notes && <span className="text-gray-500 dark:text-gray-400 italic"> · {ex.log.notes}</span>}
+              </div>
+            )}
             {ex.reference_url && (
               <a
                 href={ex.reference_url}
@@ -425,7 +465,25 @@
               </a>
             )}
           </div>
-        </label>
+          <div className="flex items-center gap-0.5 flex-shrink-0 -mr-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(ex); }}
+              aria-label="Editar"
+              className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 active:bg-gray-100 dark:active:bg-gray-800 rounded-lg"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+            </button>
+            {ex.custom && (
+              <button
+                onClick={(e) => { e.stopPropagation(); if (confirm("¿Eliminar este ejercicio extra?")) onDelete(ex); }}
+                aria-label="Eliminar"
+                className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 active:bg-gray-100 dark:active:bg-gray-800 rounded-lg"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6M1 7h22M8 7V4a1 1 0 011-1h6a1 1 0 011 1v3" /></svg>
+              </button>
+            )}
+          </div>
+        </div>
       );
     }
 
@@ -468,10 +526,9 @@
       );
     }
 
-    function BlockCard({ blockKey, block, onToggle, onSave, expanded, onToggleExpand }) {
+    function BlockCard({ blockKey, block, onToggle, onSave, onEditExercise, onAddExercise, onDeleteExercise, expanded, onToggleExpand }) {
       const status = block.status;
-      const total = block.exercises.length;
-      const done = block.exercises.filter(e => e.completed).length;
+      const counts = countPlannedVsCustom(block);
       const savedAt = block.saved_at ? new Date(block.saved_at) : null;
 
       const statusPill = {
@@ -494,7 +551,9 @@
               <span className="text-sm truncate">{block.label}</span>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
-              <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">{done}/{total}</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+                {counts.plannedDone}/{counts.plannedTotal}{counts.customDone > 0 && <span className="text-amber-600 dark:text-amber-400"> +{counts.customDone}</span>}
+              </span>
               <span className={"text-[10px] font-medium px-1.5 py-0.5 rounded " + statusPill.cls}>{statusPill.label}</span>
               <svg className={"w-4 h-4 text-gray-400 transition-transform " + (expanded ? "rotate-180" : "")} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
             </div>
@@ -503,12 +562,24 @@
             <div className="px-3 pb-3 border-t border-gray-100 dark:border-gray-800">
               <div className="divide-y divide-gray-100 dark:divide-gray-800">
                 {block.exercises.map(ex => (
-                  <ExerciseRow key={ex.id} ex={ex} onToggle={(id) => onToggle(blockKey, id)} />
+                  <ExerciseRow
+                    key={ex.id}
+                    ex={ex}
+                    onToggle={(id) => onToggle(blockKey, id)}
+                    onEdit={(ex) => onEditExercise(blockKey, ex.id)}
+                    onDelete={(ex) => onDeleteExercise(blockKey, ex.id)}
+                  />
                 ))}
               </div>
               <button
+                onClick={() => onAddExercise(blockKey)}
+                className="w-full mt-2 min-h-[40px] rounded-xl border border-dashed border-gray-300 dark:border-gray-700 text-sm font-medium text-gray-600 dark:text-gray-400 active:bg-gray-50 dark:active:bg-gray-800"
+              >
+                + Agregar ejercicio extra
+              </button>
+              <button
                 onClick={() => onSave(blockKey)}
-                className="w-full mt-3 min-h-[44px] rounded-xl bg-emerald-600 text-white text-sm font-medium active:bg-emerald-700"
+                className="w-full mt-2 min-h-[44px] rounded-xl bg-emerald-600 text-white text-sm font-medium active:bg-emerald-700"
               >
                 Guardar bloque {titleByKey[blockKey] || blockKey}
               </button>
@@ -523,7 +594,7 @@
       );
     }
 
-    function DayPlan({ plan, selectedDate, onSelectDay, onToggleExercise, onSaveBlock, onPainChange }) {
+    function DayPlan({ plan, selectedDate, onSelectDay, onToggleExercise, onSaveBlock, onPainChange, onEditExercise, onAddExercise, onDeleteExercise }) {
       const today = todayIso();
       const day = plan.days[selectedDate];
       const [expanded, setExpanded] = useState(() => {
@@ -577,6 +648,9 @@
                 block={block}
                 onToggle={onToggleExercise}
                 onSave={onSaveBlock}
+                onEditExercise={onEditExercise}
+                onAddExercise={onAddExercise}
+                onDeleteExercise={onDeleteExercise}
                 expanded={!!expanded[k]}
                 onToggleExpand={() => toggleExpand(k)}
               />
@@ -683,6 +757,349 @@
       );
     }
 
+    function ExerciseEditor({ open, exercise, originalPrescription, isNew, onSave, onClose }) {
+      const blank = { name: "", category: "cuadriceps_hsr", sets: null, reps: "", weight: "", rpe: null, notes: "" };
+      const [form, setForm] = useState(blank);
+
+      useEffect(() => {
+        if (!open) return;
+        if (isNew) {
+          setForm(blank);
+        } else if (exercise) {
+          const log = exercise.log || {};
+          setForm({
+            name: exercise.name || "",
+            category: exercise.category || "cuadriceps_hsr",
+            sets: log.sets ?? null,
+            reps: log.reps ?? "",
+            weight: log.weight ?? "",
+            rpe: log.rpe ?? null,
+            notes: log.notes ?? ""
+          });
+        }
+      }, [open, exercise, isNew]);
+
+      if (!open) return null;
+
+      const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
+      const canSave = form.name.trim().length > 0;
+
+      const save = () => {
+        if (!canSave) return;
+        const log = {
+          sets: form.sets === "" || form.sets == null ? null : Number(form.sets),
+          reps: (form.reps || "").toString().trim(),
+          weight: (form.weight || "").toString().trim(),
+          rpe: form.rpe === "" || form.rpe == null ? null : Number(form.rpe),
+          notes: (form.notes || "").toString().trim()
+        };
+        const anyLog = log.sets != null || log.reps || log.weight || log.rpe != null || log.notes;
+        onSave({
+          name: form.name.trim(),
+          category: form.category,
+          log: anyLog ? log : null
+        });
+      };
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[480px] bg-white dark:bg-gray-900 rounded-t-2xl max-h-[92vh] overflow-y-auto shadow-xl"
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          >
+            <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 px-4 py-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold">{isNew ? "Agregar ejercicio extra" : "Editar / reemplazar"}</h3>
+              <button onClick={onClose} className="p-1.5 -m-1.5 text-gray-500 dark:text-gray-400">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              {isNew && (
+                <div className="rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 px-3 py-2 text-[11px] text-amber-900 dark:text-amber-200 leading-snug">
+                  Se guarda como extra del plan. No cuenta para el % de cumplimiento. Si querés reemplazar un ejercicio planificado, cerrá esto y usá ✎ en el ejercicio.
+                </div>
+              )}
+
+              {!isNew && originalPrescription && (
+                <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-800 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Planificado</div>
+                  <div className="text-xs text-gray-700 dark:text-gray-300 tabular-nums mt-0.5">{originalPrescription}</div>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-0.5 block">Nombre del ejercicio</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={(e) => setField("name", e.target.value)}
+                  className="w-full h-10 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3"
+                  placeholder="ej. Press banca inclinado con mancuernas"
+                  autoFocus={isNew}
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-0.5 block">Categoría</label>
+                <select
+                  value={form.category}
+                  onChange={(e) => setField("category", e.target.value)}
+                  className="w-full h-10 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3"
+                >
+                  {Object.entries(CATEGORIES).map(([k, v]) => (
+                    <option key={k} value={k}>{v.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-0.5 block">Series</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="1" max="20" step="1"
+                    value={form.sets ?? ""}
+                    onChange={(e) => setField("sets", e.target.value === "" ? null : Number(e.target.value))}
+                    className="w-full h-10 text-center tabular-nums text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+                    placeholder="—"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-0.5 block">RPE (opcional)</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="1" max="10" step="0.5"
+                    value={form.rpe ?? ""}
+                    onChange={(e) => setField("rpe", e.target.value === "" ? null : Number(e.target.value))}
+                    className="w-full h-10 text-center tabular-nums text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+                    placeholder="—"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-0.5 block">Reps por serie</label>
+                <input
+                  type="text"
+                  value={form.reps}
+                  onChange={(e) => setField("reps", e.target.value)}
+                  className="w-full h-10 text-sm tabular-nums rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3"
+                  placeholder="ej. 10  ·  10-8-6  ·  45s  ·  20min"
+                />
+                <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">Mismo número para todas, o separado por guiones si variaste.</div>
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-0.5 block">Peso (kg)</label>
+                <input
+                  type="text"
+                  value={form.weight}
+                  onChange={(e) => setField("weight", e.target.value)}
+                  className="w-full h-10 text-sm tabular-nums rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3"
+                  placeholder="ej. 22  ·  22-22-22-20  ·  (vacío si no aplica)"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-0.5 block">Notas</label>
+                <textarea
+                  rows={2}
+                  value={form.notes}
+                  onChange={(e) => setField("notes", e.target.value)}
+                  className="w-full text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 leading-snug"
+                  placeholder="ej. última serie bajé por fatiga, sin dolor"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={onClose}
+                  className="flex-1 min-h-[44px] rounded-xl border border-gray-300 dark:border-gray-700 text-sm font-medium text-gray-700 dark:text-gray-300 active:bg-gray-100 dark:active:bg-gray-800"
+                >Cancelar</button>
+                <button
+                  onClick={save}
+                  disabled={!canSave}
+                  className={"flex-1 min-h-[44px] rounded-xl text-sm font-medium " + (canSave ? "bg-emerald-600 text-white active:bg-emerald-700" : "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600")}
+                >{isNew ? "Agregar" : "Guardar"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function ProfileSettings({ config, onSave }) {
+      const [expanded, setExpanded] = useState(false);
+      const [form, setForm] = useState(() => structuredClone(config));
+      const [justSaved, setJustSaved] = useState(false);
+
+      useEffect(() => { setForm(structuredClone(config)); }, [config]);
+
+      const dirty = useMemo(
+        () => JSON.stringify(form) !== JSON.stringify(config),
+        [form, config]
+      );
+
+      const setProfileField = (key, value) => {
+        setForm(f => ({ ...f, profile: { ...f.profile, [key]: value } }));
+      };
+      const setDiagField = (part, key, value) => {
+        setForm(f => ({ ...f, diagnoses: { ...f.diagnoses, [part]: { ...f.diagnoses[part], [key]: value } } }));
+      };
+
+      const save = async () => {
+        const next = structuredClone(form);
+        // Filter empty lines in diagnoses arrays
+        for (const part of Object.keys(next.diagnoses)) {
+          const d = next.diagnoses[part];
+          if (Array.isArray(d.conditions)) d.conditions = d.conditions.filter(s => s && s.trim());
+          if (Array.isArray(d.normal)) d.normal = d.normal.filter(s => s && s.trim());
+        }
+        await onSave(next);
+        setJustSaved(true);
+        setTimeout(() => setJustSaved(false), 2000);
+      };
+
+      const p = form.profile || {};
+      const kneeCount = (config.diagnoses?.knee_right?.conditions || []).length;
+      const lumbarCount = (config.diagnoses?.lumbar?.conditions || []).length;
+      const previewBits = [
+        p.age ? p.age + "a" : null,
+        p.weight_kg ? p.weight_kg + "kg" : null,
+        p.height_cm ? p.height_cm + "cm" : null,
+        (kneeCount + lumbarCount) > 0 ? (kneeCount + lumbarCount) + " dx" : null
+      ].filter(Boolean).join(" · ");
+
+      const numField = (label, key, min, max, step = 1) => (
+        <div className="flex flex-col">
+          <label className="text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-0.5">{label}</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={min} max={max} step={step}
+            value={p[key] ?? ""}
+            onChange={(e) => {
+              const v = e.target.value;
+              setProfileField(key, v === "" ? null : Number(v));
+            }}
+            className="w-full h-10 text-center tabular-nums text-base rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+            placeholder="—"
+          />
+        </div>
+      );
+
+      const diagCard = (part, title) => {
+        const d = form.diagnoses?.[part] || { conditions: [], normal: [], date: null };
+        const toText = (arr) => Array.isArray(arr) ? arr.join("\n") : "";
+        const fromText = (text) => text.split("\n").map(s => s);
+        return (
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 p-3 bg-white dark:bg-gray-900 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-medium text-gray-700 dark:text-gray-300">{title}</div>
+              <input
+                type="date"
+                value={d.date || ""}
+                onChange={(e) => setDiagField(part, "date", e.target.value || null)}
+                className="text-xs tabular-nums rounded border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Condiciones (una por línea)</label>
+              <textarea
+                rows={3}
+                value={toText(d.conditions)}
+                onChange={(e) => setDiagField(part, "conditions", fromText(e.target.value))}
+                className="w-full text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 mt-1 leading-snug"
+                placeholder="ej. Condromalacia rotuliana grado II"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase text-gray-500 dark:text-gray-400">Hallazgos normales</label>
+              <textarea
+                rows={2}
+                value={toText(d.normal)}
+                onChange={(e) => setDiagField(part, "normal", fromText(e.target.value))}
+                className="w-full text-xs rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-2 py-1.5 mt-1 leading-snug"
+                placeholder="ej. Meniscos, LCA, LCP"
+              />
+            </div>
+          </div>
+        );
+      };
+
+      return (
+        <div className="px-4 pt-1 pb-3">
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden">
+            <button
+              onClick={() => setExpanded(v => !v)}
+              className="w-full flex items-center justify-between gap-2 p-3 min-h-[56px] active:bg-gray-50 dark:active:bg-gray-800"
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <svg className="w-4 h-4 text-gray-500 dark:text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                <div className="flex flex-col items-start min-w-0">
+                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">Perfil & diagnósticos</div>
+                  {previewBits && <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{previewBits}</div>}
+                </div>
+              </div>
+              <svg className={"w-4 h-4 text-gray-400 transition-transform flex-shrink-0 " + (expanded ? "rotate-180" : "")} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+            </button>
+
+            {expanded && (
+              <div className="px-3 pb-3 border-t border-gray-100 dark:border-gray-800 space-y-3 pt-3">
+                {/* Perfil */}
+                <div className="rounded-xl border border-gray-200 dark:border-gray-800 p-3 bg-white dark:bg-gray-900">
+                  <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">Perfil</div>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-[10px] uppercase text-gray-500 dark:text-gray-400 mb-0.5 block">Nombre</label>
+                      <input
+                        type="text"
+                        value={p.name || ""}
+                        onChange={(e) => setProfileField("name", e.target.value)}
+                        className="w-full h-10 text-sm rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3"
+                        placeholder="Opcional"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {numField("Edad", "age", 1, 120, 1)}
+                      {numField("Años entreno", "training_years", 0, 60, 1)}
+                      {numField("Peso (kg)", "weight_kg", 30, 200, 0.1)}
+                      {numField("Altura (cm)", "height_cm", 100, 250, 1)}
+                      {numField("% grasa actual", "body_fat_pct", 5, 50, 0.1)}
+                      {numField("% grasa objetivo", "target_fat_pct", 5, 50, 0.1)}
+                      {numField("Proteína diaria (g)", "protein_daily_g", 50, 300, 1)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Diagnósticos */}
+                {diagCard("knee_right", "Rodilla derecha")}
+                {diagCard("lumbar", "Lumbar")}
+
+                {/* Save */}
+                <div>
+                  <button
+                    onClick={save}
+                    disabled={!dirty}
+                    className={"w-full min-h-[44px] rounded-xl text-sm font-medium transition " + (dirty ? "bg-emerald-600 text-white active:bg-emerald-700" : "bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600")}
+                  >
+                    {justSaved ? "✓ Guardado" : "Guardar cambios"}
+                  </button>
+                  <div className="text-[10px] text-gray-500 dark:text-gray-400 text-center mt-1.5">
+                    Estos datos quedan solo en tu dispositivo.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     function NutritionPlaceholder() {
       return (
         <div className="px-4 py-8 text-center">
@@ -747,6 +1164,61 @@
         persistPlan(next);
       }, [plan, selectedDate, persistPlan]);
 
+      const saveConfig = useCallback(async (next) => {
+        setConfig(next);
+        await window.storage.set("config", next);
+      }, []);
+
+      // Exercise editor state: { blockKey, exerciseId?, isNew }
+      const [editor, setEditor] = useState(null);
+
+      const openEditExercise = useCallback((blockKey, exerciseId) => {
+        setEditor({ blockKey, exerciseId, isNew: false });
+      }, []);
+      const openAddExercise = useCallback((blockKey) => {
+        setEditor({ blockKey, exerciseId: null, isNew: true });
+      }, []);
+      const closeEditor = useCallback(() => setEditor(null), []);
+
+      const saveExercise = useCallback((updates) => {
+        if (!editor) return;
+        const next = structuredClone(plan);
+        const block = next.days[selectedDate].blocks[editor.blockKey];
+        if (editor.isNew) {
+          block.exercises.push({
+            id: "cust-" + Date.now(),
+            name: updates.name,
+            prescription: "",
+            category: updates.category,
+            log: updates.log,
+            custom: true,
+            completed: true
+          });
+        } else {
+          const idx = block.exercises.findIndex(e => e.id === editor.exerciseId);
+          if (idx >= 0) {
+            const cur = block.exercises[idx];
+            const changed = cur.name !== updates.name || cur.category !== updates.category;
+            block.exercises[idx] = {
+              ...cur,
+              name: updates.name,
+              category: updates.category,
+              log: updates.log,
+              modified: cur.modified || (changed && !cur.custom)
+            };
+          }
+        }
+        persistPlan(next);
+        setEditor(null);
+      }, [plan, selectedDate, editor, persistPlan]);
+
+      const deleteExercise = useCallback((blockKey, exerciseId) => {
+        const next = structuredClone(plan);
+        const block = next.days[selectedDate].blocks[blockKey];
+        block.exercises = block.exercises.filter(e => e.id !== exerciseId);
+        persistPlan(next);
+      }, [plan, selectedDate, persistPlan]);
+
       if (!loaded) {
         return <div className="p-8 text-center text-sm text-gray-500">Cargando…</div>;
       }
@@ -769,9 +1241,13 @@
                 onToggleExercise={toggleExercise}
                 onSaveBlock={saveBlock}
                 onPainChange={painChange}
+                onEditExercise={openEditExercise}
+                onAddExercise={openAddExercise}
+                onDeleteExercise={deleteExercise}
               />
               <WeekSummary plan={plan} />
               <Timeline config={config} />
+              <ProfileSettings config={config} onSave={saveConfig} />
               <ResetFooter onReset={async () => {
                 if (confirm("¿Borrar todos los datos y empezar de cero?")) {
                   await window.storage.delete("config");
@@ -784,6 +1260,15 @@
           ) : (
             <NutritionPlaceholder />
           )}
+
+          <ExerciseEditor
+            open={!!editor}
+            isNew={!!editor?.isNew}
+            exercise={editor && !editor.isNew ? plan.days[selectedDate].blocks[editor.blockKey].exercises.find(e => e.id === editor.exerciseId) : null}
+            originalPrescription={editor && !editor.isNew ? plan.days[selectedDate].blocks[editor.blockKey].exercises.find(e => e.id === editor.exerciseId)?.prescription : null}
+            onSave={saveExercise}
+            onClose={closeEditor}
+          />
         </div>
       );
     }
