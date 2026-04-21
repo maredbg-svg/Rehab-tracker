@@ -122,11 +122,11 @@
       week_number: 1,
       phase: 1,
       phase_name: "Control motor y descarga",
-      start_date: "2026-04-21",
-      end_date: "2026-04-27",
+      start_date: "2026-04-20",
+      end_date: "2026-04-26",
       objective: "Establecer base de core + glúteos sin dolor. Isométricos tendón rotuliano. Mantener tren superior.",
       days: {
-        "2026-04-21": { day_name: "Lunes", blocks: {
+        "2026-04-20": { day_name: "Lunes", blocks: {
           am: { label: "Gym oficina (7-8am)", exercises: [
             { id: "ex001", name: "Spanish squat isométrico", prescription: "5 × 45s — 70% MVIC — desc. 60s", category: "tendon_rotuliano", timing: "PRE", reference_url: yt("spanish squat isometric"), completed: false },
             { id: "ex002", name: "Sentadilla parcial 0-60°", prescription: "3 × 12 — 15RM — tempo 3-0-3 — desc. 90s", category: "cuadriceps_hsr", reference_url: yt("partial squat 0-60"), completed: false },
@@ -142,7 +142,7 @@
           ], status: "pending", saved_at: null }
         }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false },
 
-        "2026-04-22": { day_name: "Martes", blocks: {
+        "2026-04-21": { day_name: "Martes", blocks: {
           am: { label: "Gym oficina (7-8am)", exercises: [
             { id: "ex010", name: "Spanish squat isométrico", prescription: "5 × 45s — 70% MVIC — desc. 60s", category: "tendon_rotuliano", timing: "PRE", completed: false },
             { id: "ex011", name: "Puente glúteo bilateral", prescription: "3 × 12 — desc. 45s", category: "gluteos", completed: false },
@@ -157,7 +157,7 @@
           ], status: "pending", saved_at: null }
         }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false },
 
-        "2026-04-23": { day_name: "Miércoles", blocks: {
+        "2026-04-22": { day_name: "Miércoles", blocks: {
           am: { label: "Gym oficina (7-8am)", exercises: [
             { id: "ex018", name: "Spanish squat isométrico", prescription: "5 × 45s — 70% MVIC — desc. 60s", category: "tendon_rotuliano", timing: "PRE", completed: false },
             { id: "ex019", name: "Sentadilla parcial 0-60°", prescription: "3 × 12 — 15RM — tempo 3-0-3 — desc. 90s", category: "cuadriceps_hsr", completed: false },
@@ -173,7 +173,7 @@
           ], status: "pending", saved_at: null }
         }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false },
 
-        "2026-04-24": { day_name: "Jueves", blocks: {
+        "2026-04-23": { day_name: "Jueves", blocks: {
           am: { label: "Gym oficina (7-8am)", exercises: [
             { id: "ex027", name: "Spanish squat isométrico", prescription: "5 × 45s — 70% MVIC — desc. 60s", category: "tendon_rotuliano", timing: "PRE", completed: false },
             { id: "ex028", name: "Monster walks con banda", prescription: "3 × 12 c/dirección — desc. 45s", category: "gluteos", completed: false },
@@ -188,7 +188,7 @@
           ], status: "pending", saved_at: null }
         }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false },
 
-        "2026-04-25": { day_name: "Viernes", blocks: {
+        "2026-04-24": { day_name: "Viernes", blocks: {
           am: { label: "Gym cerca de casa", exercises: [
             { id: "ex035", name: "Bicicleta estática (asiento alto)", prescription: "20 min — resist. baja-media — RPM 60-70", category: "cardio", completed: false },
             { id: "ex036", name: "Spanish squat isométrico", prescription: "5 × 45s — 70% MVIC — desc. 60s", category: "tendon_rotuliano", completed: false },
@@ -200,7 +200,7 @@
           ], status: "pending", saved_at: null }
         }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false },
 
-        "2026-04-26": { day_name: "Sábado", blocks: {
+        "2026-04-25": { day_name: "Sábado", blocks: {
           am: { label: "Gym (flexible)", exercises: [
             { id: "ex040", name: "Spanish squat isométrico", prescription: "5 × 45s — 70% MVIC — desc. 60s", category: "tendon_rotuliano", timing: "PRE", completed: false },
             { id: "ex041", name: "Sentadilla parcial 0-60°", prescription: "3 × 12 — 15RM — tempo 3-0-3 — desc. 90s", category: "cuadriceps_hsr", completed: false },
@@ -213,7 +213,7 @@
           ], status: "pending", saved_at: null }
         }, pain: { knee_before: null, knee_after: null, back_before: null, back_after: null }, day_closed: false },
 
-        "2026-04-27": { day_name: "Domingo", blocks: {
+        "2026-04-26": { day_name: "Domingo", blocks: {
           rest: { label: "Descanso activo", exercises: [
             { id: "ex046", name: "Caminata suave + movilidad opcional", prescription: "20-30 min", category: "cardio", completed: false }
           ], status: "pending", saved_at: null }
@@ -297,6 +297,29 @@
       const maintenance = bmr * 1.45; // light activity + rehab
       const cut = Math.round(maintenance - 350); // gentle cut for fat loss
       return { bmr: Math.round(bmr), maintenance: Math.round(maintenance), cut };
+    }
+
+    function shiftDateKey(dateStr, deltaDays) {
+      const [y, m, d] = dateStr.split("-").map(Number);
+      const dt = new Date(y, m - 1, d);
+      dt.setDate(dt.getDate() + deltaDays);
+      return dt.getFullYear() + "-" + String(dt.getMonth()+1).padStart(2,"0") + "-" + String(dt.getDate()).padStart(2,"0");
+    }
+
+    function migratePlanDates(plan) {
+      // Bug fix: original plan had 2026-04-21 labeled "Lunes" but it's actually Tuesday.
+      // Shift all dates back 1 day so "Lunes" = 2026-04-20 (the real Monday).
+      if (plan?.days?.["2026-04-21"]?.day_name === "Lunes" && plan?.start_date === "2026-04-21") {
+        const newDays = {};
+        for (const [k, v] of Object.entries(plan.days)) {
+          newDays[shiftDateKey(k, -1)] = v;
+        }
+        plan.days = newDays;
+        plan.start_date = shiftDateKey(plan.start_date, -1);
+        plan.end_date = shiftDateKey(plan.end_date, -1);
+        return true;
+      }
+      return false;
     }
 
     function parsePrescriptionDefaults(text) {
@@ -1601,6 +1624,7 @@
           let h = await window.storage.get("history");
           if (!c) { c = DEFAULT_CONFIG; await window.storage.set("config", c); }
           if (!p) { p = DEFAULT_PLAN; await window.storage.set("active-plan", p); }
+          else if (migratePlanDates(p)) { await window.storage.set("active-plan", p); }
           if (!h) { h = DEFAULT_HISTORY; await window.storage.set("history", h); }
           setConfig(c);
           setPlan(p);
