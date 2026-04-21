@@ -284,7 +284,7 @@
       for (const d of Object.values(plan.days)) {
         const totals = sumMealsDay(d);
         const { target } = computeDayTarget(config?.profile, d);
-        if (totals.calories >= 0.9 * target && totals.protein_g >= 0.9 * targetProt) cumplidos++;
+        if (totals.calories >= 0.85 * target && totals.protein_g >= 0.85 * targetProt) cumplidos++;
       }
       return cumplidos + "/" + totalDays;
     }
@@ -351,21 +351,30 @@
     function computeKPIs(plan, config) {
       const dayKeys = Object.keys(plan.days);
       let trainingDone = 0;
+      let trainingDays = 0;
       const kneeAfter = [];
       const backAfter = [];
       for (const k of dayKeys) {
         const d = plan.days[k];
         const isRest = "rest" in d.blocks;
         if (!isRest) {
-          const s = Object.values(d.blocks).map(b => b.status);
-          if (s.length > 0 && s.every(x => x === "complete")) trainingDone++;
+          trainingDays++;
+          let total = 0, done = 0;
+          for (const b of Object.values(d.blocks)) {
+            for (const ex of b.exercises) {
+              if (ex.custom) continue;
+              total++;
+              if (ex.completed) done++;
+            }
+          }
+          if (total > 0 && done / total >= 0.85) trainingDone++;
         }
         if (d.pain?.knee_after != null) kneeAfter.push(Number(d.pain.knee_after));
         if (d.pain?.back_after != null) backAfter.push(Number(d.pain.back_after));
       }
       const avg = (arr) => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1) : "—";
       return {
-        training: trainingDone + "/6",
+        training: trainingDone + "/" + trainingDays,
         macros: computeMacrosWeekKPI(plan, config),
         kneePain: avg(kneeAfter),
         backPain: avg(backAfter)
