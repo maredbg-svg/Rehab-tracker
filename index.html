@@ -452,9 +452,9 @@
                 {ex.log?.notes && <span className="text-gray-500 dark:text-gray-400 italic"> · {ex.log.notes}</span>}
               </div>
             )}
-            {ex.reference_url && (
+            {ex.name && (
               <a
-                href={ex.reference_url}
+                href={ex.reference_url || yt(ex.name)}
                 target="_blank"
                 rel="noopener"
                 onClick={(e) => e.stopPropagation()}
